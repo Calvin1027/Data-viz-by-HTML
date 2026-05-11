@@ -1,0 +1,283 @@
+
+<h2 class="sr-only">해밀토니안 동역학 인터랙티브 시각화: 퍽이 이중 우물 포텐셜 지형을 따라 미끄러지며 에너지를 보존하는 과정</h2>
+
+<div style="padding:0.5rem 0">
+  <div style="display:grid;grid-template-columns:3fr 2fr;gap:10px;margin-bottom:10px">
+    <div>
+      <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:4px;text-align:center">물리 세계: 퍽이 확률 지형을 미끄러짐</div>
+      <canvas id="lcv" width="400" height="195" style="display:block;width:100%;border-radius:8px"></canvas>
+    </div>
+    <div>
+      <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:4px;text-align:center">위상 공간 (q, p) 궤적</div>
+      <canvas id="pcv" width="240" height="195" style="display:block;width:100%;border-radius:8px"></canvas>
+    </div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+    <button id="pbtn" onclick="togglePlay()" style="min-width:90px">&#9654; 재생</button>
+    <span style="font-size:12px;color:var(--color-text-secondary);white-space:nowrap">초기 에너지 E</span>
+    <input type="range" id="esl" min="0.3" max="2.5" step="0.05" value="0.6" style="flex:1" oninput="setE(+this.value)">
+    <span id="elbl" style="font-size:13px;font-weight:500;min-width:56px;text-align:right">E = 0.60</span>
+  </div>
+
+  <div id="hint" style="font-size:12px;padding:8px 12px;border-radius:8px;margin-bottom:10px;background:var(--color-background-secondary);color:var(--color-text-secondary)"></div>
+
+  <div style="display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:16px;align-items:start">
+    <div id="ebars" style="min-width:190px"></div>
+    <div id="expl" style="font-size:12px;color:var(--color-text-secondary);line-height:1.6;padding:8px 12px;background:var(--color-background-secondary);border-radius:8px;min-height:56px"></div>
+  </div>
+</div>
+
+<script>
+const DK = matchMedia('(prefers-color-scheme:dark)').matches;
+const BG = DK?'#232321':'#F8F6F0';
+
+const Vf = q=>(q*q-2)**2/4;
+const dVf = q=>q*(q*q-2);
+const Kf = p=>p*p/2;
+
+function leapfrog(q0,p0,eps,steps){
+  const qs=new Float64Array(steps+1),ps=new Float64Array(steps+1);
+  qs[0]=q0;ps[0]=p0;
+  let q=q0,p=p0;
+  for(let i=0;i<steps;i++){
+    const ph=p-eps/2*dVf(q);
+    q=q+eps*ph;
+    p=ph-eps/2*dVf(q);
+    qs[i+1]=q;ps[i+1]=p;
+  }
+  return{qs,ps};
+}
+
+let traj=null,fr=0,playing=false,rafId=null,curE=0.6;
+
+function initTraj(E){
+  traj=leapfrog(Math.sqrt(2),Math.sqrt(2*E),0.04,900);
+  fr=0;
+}
+
+const LW=400,LH=195,LML=32,LMR=12,LMT=18,LMB=26;
+const LPW=LW-LML-LMR,LPH=LH-LMT-LMB;
+const QMIN=-3.1,QMAX=3.1,VMIN=0,VMAX=2.3;
+
+function qx(q){return LML+(q-QMIN)/(QMAX-QMIN)*LPW;}
+function vy(v){return LMT+LPH-(Math.min(v,VMAX)-VMIN)/(VMAX-VMIN)*LPH;}
+
+const PW=240,PH=195,PM=26;
+const PPW=PW-2*PM,PPH=PH-2*PM;
+const PQMN=-2.8,PQMX=2.8,PPMN=-2.8,PPMX=2.8;
+
+function phx(q){return PM+(q-PQMN)/(PQMX-PQMN)*PPW;}
+function phy(p){return PM+PPH-(p-PPMN)/(PPMX-PPMN)*PPH;}
+
+const lc=document.getElementById('lcv'),lctx=lc.getContext('2d');
+const pc=document.getElementById('pcv'),pctx=pc.getContext('2d');
+
+function drawLandscape(q,p){
+  const ctx=lctx;
+  ctx.clearRect(0,0,LW,LH);
+  ctx.fillStyle=BG;ctx.fillRect(0,0,LW,LH);
+
+  for(let i=0;i<200;i++){
+    const qi=QMIN+(QMAX-QMIN)*i/200;
+    const qi2=QMIN+(QMAX-QMIN)*(i+1)/200;
+    const d=Math.exp(-Vf(qi));
+    ctx.fillStyle=`rgba(186,117,23,${d*0.22})`;
+    ctx.fillRect(qx(qi),LMT,qx(qi2)-qx(qi),LPH);
+  }
+
+  ctx.beginPath();
+  for(let i=0;i<=300;i++){
+    const qi=QMIN+(QMAX-QMIN)*i/300;
+    const vi=Math.min(Vf(qi),VMAX);
+    if(i===0)ctx.moveTo(qx(qi),vy(vi));
+    else ctx.lineTo(qx(qi),vy(vi));
+  }
+  ctx.lineTo(qx(QMAX),LMT+LPH);ctx.lineTo(qx(QMIN),LMT+LPH);ctx.closePath();
+  ctx.fillStyle=DK?'rgba(186,117,23,0.14)':'rgba(186,117,23,0.12)';ctx.fill();
+
+  ctx.beginPath();
+  for(let i=0;i<=300;i++){
+    const qi=QMIN+(QMAX-QMIN)*i/300;
+    const vi=Math.min(Vf(qi),VMAX);
+    if(i===0)ctx.moveTo(qx(qi),vy(vi));else ctx.lineTo(qx(qi),vy(vi));
+  }
+  ctx.strokeStyle=DK?'#EF9F27':'#BA7517';ctx.lineWidth=2;ctx.stroke();
+
+  if(curE<=VMAX){
+    ctx.beginPath();ctx.moveTo(qx(QMIN),vy(curE));ctx.lineTo(qx(QMAX),vy(curE));
+    ctx.strokeStyle=DK?'rgba(55,138,221,0.45)':'rgba(55,138,221,0.4)';
+    ctx.lineWidth=1;ctx.setLineDash([4,3]);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle=DK?'rgba(55,138,221,0.6)':'#185FA5';
+    ctx.font='9px sans-serif';ctx.textAlign='right';
+    ctx.fillText('E='+curE.toFixed(2),qx(QMAX)-2,vy(curE)-3);
+  }
+
+  ctx.font='10px sans-serif';ctx.textAlign='center';
+  ctx.fillStyle=DK?'rgba(186,117,23,0.85)':'#854F0B';
+  ctx.fillText('Mode 1',qx(-Math.sqrt(2)),vy(0)+14);
+  ctx.fillText('Mode 2',qx(Math.sqrt(2)),vy(0)+14);
+  ctx.fillStyle=DK?'rgba(226,75,74,0.7)':'#993C1D';
+  ctx.fillText('장벽 V=1',qx(0),vy(1.0)-5);
+
+  ctx.strokeStyle=DK?'rgba(255,255,255,0.15)':'rgba(0,0,0,0.15)';ctx.lineWidth=0.5;
+  ctx.beginPath();ctx.moveTo(LML,LMT+LPH);ctx.lineTo(LW-LMR,LMT+LPH);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(LML,LMT);ctx.lineTo(LML,LMT+LPH);ctx.stroke();
+  ctx.fillStyle=DK?'rgba(255,255,255,0.35)':'rgba(0,0,0,0.35)';
+  ctx.font='9px sans-serif';ctx.textAlign='right';
+  ctx.fillText('V(q)',LML-2,LMT+8);
+  ctx.textAlign='center';ctx.fillText('q (위치)',LML+LPW/2,LMT+LPH+18);
+  ctx.textAlign='right';ctx.fillText('0',LML-3,vy(0)+4);ctx.fillText('1',LML-3,vy(1)+4);
+
+  const px_c=qx(q),py_c=vy(Vf(q))-9;
+  const al=Math.min(Math.abs(p)*16,52),dir=p>=0?1:-1;
+  if(al>4){
+    ctx.beginPath();ctx.moveTo(px_c,py_c);ctx.lineTo(px_c+dir*al,py_c);
+    ctx.strokeStyle='#E24B4A';ctx.lineWidth=2;ctx.stroke();
+    ctx.beginPath();ctx.moveTo(px_c+dir*al,py_c);
+    ctx.lineTo(px_c+dir*(al-6),py_c-4);ctx.lineTo(px_c+dir*(al-6),py_c+4);
+    ctx.fillStyle='#E24B4A';ctx.fill();
+  }
+  ctx.beginPath();ctx.arc(px_c,py_c,8,0,2*Math.PI);
+  ctx.fillStyle='#378ADD';ctx.fill();
+  ctx.strokeStyle='white';ctx.lineWidth=1.5;ctx.stroke();
+}
+
+function drawPhase(q,p){
+  const ctx=pctx;
+  ctx.clearRect(0,0,PW,PH);
+  ctx.fillStyle=BG;ctx.fillRect(0,0,PW,PH);
+
+  ctx.strokeStyle=DK?'rgba(255,255,255,0.12)':'rgba(0,0,0,0.12)';ctx.lineWidth=0.5;
+  ctx.beginPath();ctx.moveTo(PM,PH-PM);ctx.lineTo(PW-PM,PH-PM);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(PM,PM);ctx.lineTo(PM,PH-PM);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(phx(0),PM);ctx.lineTo(phx(0),PH-PM);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(PM,phy(0));ctx.lineTo(PW-PM,phy(0));ctx.stroke();
+
+  ctx.fillStyle=DK?'rgba(255,255,255,0.3)':'rgba(0,0,0,0.3)';
+  ctx.font='9px sans-serif';ctx.textAlign='center';ctx.fillText('q',PW-PM,PH-PM+14);
+  ctx.textAlign='right';ctx.fillText('p',PM-3,PM+8);
+
+  if(traj){
+    ctx.beginPath();
+    let started=false;
+    for(let i=0;i<traj.qs.length;i++){
+      const qq=traj.qs[i],pp=traj.ps[i];
+      if(Math.abs(qq)>PQMX+0.1||Math.abs(pp)>PPMX+0.1)continue;
+      if(!started){ctx.moveTo(phx(qq),phy(pp));started=true;}
+      else ctx.lineTo(phx(qq),phy(pp));
+    }
+    ctx.strokeStyle=DK?'rgba(55,138,221,0.18)':'rgba(55,138,221,0.15)';ctx.lineWidth=1;ctx.stroke();
+
+    if(fr>1){
+      ctx.beginPath();
+      let s2=false;
+      for(let i=0;i<=Math.min(fr,traj.qs.length-1);i++){
+        const qq=traj.qs[i],pp=traj.ps[i];
+        if(Math.abs(qq)>PQMX+0.1||Math.abs(pp)>PPMX+0.1)continue;
+        if(!s2){ctx.moveTo(phx(qq),phy(pp));s2=true;}else ctx.lineTo(phx(qq),phy(pp));
+      }
+      ctx.strokeStyle=DK?'rgba(55,138,221,0.75)':'rgba(24,95,165,0.65)';ctx.lineWidth=1.5;ctx.stroke();
+    }
+  }
+
+  ctx.fillStyle=DK?'rgba(255,255,255,0.5)':'rgba(0,0,0,0.4)';
+  ctx.font='9px sans-serif';ctx.textAlign='center';
+  ctx.fillText('에너지 보존 \u2192 닫힌 곡선',PW/2,PH-4);
+
+  ctx.beginPath();ctx.arc(phx(q),phy(p),5,0,2*Math.PI);
+  ctx.fillStyle='#378ADD';ctx.fill();
+  ctx.strokeStyle='white';ctx.lineWidth=1.5;ctx.stroke();
+}
+
+function updateEbars(q,p){
+  const vq=Vf(q),kp=Kf(p),E=vq+kp;
+  const mx=Math.max(E,0.05)*1.05;
+  function bar(label,val,color){
+    const w=Math.max(0,Math.min(100,val/mx*100)).toFixed(1);
+    return`<div style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--color-text-secondary);margin-bottom:2px">
+        <span>${label}</span><span style="font-weight:500">${val.toFixed(3)}</span>
+      </div>
+      <div style="height:9px;background:var(--color-background-secondary);border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:${w}%;background:${color};border-radius:4px;transition:width 0.03s"></div>
+      </div></div>`;
+  }
+  document.getElementById('ebars').innerHTML=
+    `<div style="font-size:11px;font-weight:500;color:var(--color-text-secondary);margin-bottom:8px">에너지 분포 (H=V+K 일정)</div>`+
+    bar('V(q) \u2014 위치 에너지',vq,DK?'#EF9F27':'#BA7517')+
+    bar('K(p) \u2014 운동 에너지',kp,'#378ADD')+
+    bar('H = V+K  (총 에너지)',E,DK?'rgba(255,255,255,0.25)':'rgba(0,0,0,0.2)');
+}
+
+function updateExplainer(q,p){
+  const vq=Vf(q),kp=Kf(p);
+  let txt='';
+  const atBar=Math.abs(q)<0.35;
+  const atRM=q>1.0&&kp<0.15;
+  const atLM=q<-1.0&&kp<0.15;
+  if(atBar){
+    txt=`<b style="color:${DK?'#E24B4A':'#A32D2D'}">장벽 꼭대기 (q\u22480)!</b> 확률이 낮은 구간이에요. V=${vq.toFixed(2)}로 높죠. 
+         하지만 <b>운동 에너지 K=${kp.toFixed(2)}</b> 덕분에 퍽이 멈추지 않고 통과해요. 
+         이게 바로 random walk와의 차이 \u2014 momentum이 장벽을 넘게 해줘요.`;
+  } else if(atRM){
+    txt=`<b style="color:${DK?'#EF9F27':'#854F0B'}">오른쪽 Mode (q\u2248\u221a2)</b>: 확률이 가장 높은 골짜기예요. V\u22480으로 매우 낮아요. 
+         MCMC가 여기서 샘플을 많이 뽑게 될 거예요. 곧 momentum이 생겨 다시 움직일 거예요.`;
+  } else if(atLM){
+    txt=`<b style="color:${DK?'#EF9F27':'#854F0B'}">왼쪽 Mode (q\u2248-\u221a2)</b>: 반대편 골짜기에도 도달했어요! 
+         gradient만 따랐다면 <i>절대 여기까지 못 왔어요</i>. 운동량이 장벽을 넘겨준 덕분이에요.`;
+  } else if(q>0&&p<-0.2){
+    txt=`\u2190 오른쪽 \u2192 왼쪽으로 이동 중. V\u2191 K\u2193 \u2014 위치에너지가 운동에너지를 흡수하고 있어요. H는 여전히 일정해요.`;
+  } else if(q<0&&p>0.2){
+    txt=`\u2192 왼쪽 \u2192 오른쪽으로 이동 중. V\u2193 K\u2191 \u2014 지형이 낮아지면서 속도가 붙고 있어요. H는 여전히 일정해요.`;
+  } else {
+    txt=`퍽이 지형을 따라 이동 중. V+K=${(vq+kp).toFixed(3)} \u2014 에너지 총합이 보존되고 있어요. 오른쪽 화살표가 현재 momentum 방향이에요.`;
+  }
+  if(curE>1)txt+=` <span style="color:${DK?'#97C459':'#3B6D11'}"> &#10003; E>1: 두 mode 모두 탐색 중</span>`;
+  document.getElementById('expl').innerHTML=txt;
+}
+
+function updateHint(){
+  const h=document.getElementById('hint');
+  if(curE>1){
+    h.style.color='var(--color-text-success)';
+    h.textContent='E = '+curE.toFixed(2)+' > 1 \u2014 장벽을 넘을 수 있어요! 퍽이 두 mode를 모두 방문해요. 위상 공간에서 큰 루프가 그려지는 걸 보세요.';
+  } else {
+    h.style.color='var(--color-text-secondary)';
+    h.textContent='E = '+curE.toFixed(2)+' < 1 \u2014 장벽(V=1)을 못 넘어요. 한쪽 mode에 갇혀있어요. E > 1로 올려보세요!';
+  }
+}
+
+function render(){
+  if(!traj)return;
+  const q=traj.qs[fr],p=traj.ps[fr];
+  drawLandscape(q,p);
+  drawPhase(q,p);
+  updateEbars(q,p);
+  updateExplainer(q,p);
+}
+
+function loop(){
+  if(!playing)return;
+  fr=(fr+3)%traj.qs.length;
+  render();
+  rafId=requestAnimationFrame(loop);
+}
+
+function togglePlay(){
+  playing=!playing;
+  document.getElementById('pbtn').textContent=playing?'\u23F8 일시정지':'\u25B6 재생';
+  if(playing)loop();else cancelAnimationFrame(rafId);
+}
+
+function setE(E){
+  curE=E;
+  document.getElementById('elbl').textContent='E = '+E.toFixed(2);
+  const wasPlaying=playing;
+  if(playing){playing=false;cancelAnimationFrame(rafId);}
+  initTraj(E);render();updateHint();
+  if(wasPlaying){playing=true;loop();}
+}
+
+initTraj(0.6);render();updateHint();
+</script>

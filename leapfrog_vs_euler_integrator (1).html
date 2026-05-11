@@ -1,0 +1,213 @@
+
+<h2 class="sr-only">Leapfrog 적분기 vs Euler: 위상 공간 안정성, 에너지 보존, 세 단계 업데이트를 보여주는 인터랙티브 시각화</h2>
+
+<div style="padding:0.5rem 0">
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin-bottom:12px">
+    <div>
+      <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:4px;text-align:center">위상 공간 (q, p) &nbsp;—&nbsp; 점선: 이상적 원</div>
+      <canvas id="pscv" width="300" height="265" style="display:block;width:100%;border-radius:8px"></canvas>
+      <div style="display:flex;gap:14px;margin-top:6px;font-size:11px;color:var(--color-text-secondary)">
+        <span><span style="display:inline-block;width:18px;height:2px;background:#378ADD;vertical-align:middle;margin-right:4px"></span>Leapfrog</span>
+        <span><span style="display:inline-block;width:18px;height:2px;background:#E24B4A;vertical-align:middle;margin-right:4px"></span>Euler</span>
+        <span><span style="display:inline-block;width:18px;height:1px;border-top:1.5px dashed #888;vertical-align:middle;margin-right:4px"></span>이상적</span>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:4px;text-align:center">에너지 H = (q²+p²)/2 &nbsp; <span style="color:#378ADD">■</span> LF &nbsp;<span style="color:#E24B4A">■</span> Euler</div>
+      <div style="position:relative;height:178px">
+        <canvas id="ecv" role="img" aria-label="에너지 H vs 스텝: Leapfrog 수평, Euler 발산">Leapfrog 에너지는 안정, Euler는 발산</canvas>
+      </div>
+      <div id="sinfo" style="font-size:12px;margin-top:8px;padding:8px 12px;background:var(--color-background-secondary);border-radius:8px"></div>
+    </div>
+  </div>
+
+  <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:5px">Leapfrog 한 스텝 상세 &nbsp;(타겟: 표준 Gaussian, V(q)=q²/2, ∇V=q)</div>
+  <div id="dance" style="min-height:86px"></div>
+
+  <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
+    <button onclick="stepOne()">+1 스텝</button>
+    <button id="rbtn" onclick="toggleRun()">&#9654; 재생</button>
+    <button onclick="doReset()">&#8635; 초기화</button>
+    <span style="font-size:12px;color:var(--color-text-secondary);margin-left:6px">스텝 크기 ε</span>
+    <input type="range" id="epsl" min="0.1" max="0.9" step="0.05" value="0.3" style="flex:1;min-width:60px" oninput="setEps(+this.value)">
+    <span id="eplbl" style="font-size:13px;font-weight:500;min-width:46px;text-align:right">ε=0.30</span>
+  </div>
+  <div style="font-size:10px;color:var(--color-text-secondary);margin-top:4px">ε 크게 → Euler 빠르게 발산. Leapfrog는 ε 커도 궤적이 닫혀있어 안정.</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const DK=matchMedia('(prefers-color-scheme:dark)').matches;
+const BG=DK?'#232321':'#F8F6F0';
+const Q0=1.5,P0=0,H0=(Q0*Q0+P0*P0)/2;
+const MAXS=65,SC=52,CX=150,CY=133,CW=300,CH=265;
+let eps=0.3,cur=0,running=false,iv=null;
+let lfd=[],eud=[];
+
+function precompute(){
+  lfd=[{q:Q0,p:P0,H:H0,qo:null,po:null,ph:null}];
+  eud=[{q:Q0,p:P0,H:H0}];
+  let lq=Q0,lp=P0,eq=Q0,ep=P0;
+  for(let i=0;i<MAXS;i++){
+    const ph=lp-eps/2*lq;
+    const qn=lq+eps*ph;
+    const pn=ph-eps/2*qn;
+    lfd.push({q:qn,p:pn,qo:lq,po:lp,ph,H:(qn*qn+pn*pn)/2});
+    lq=qn;lp=pn;
+    const eqn=eq+eps*ep;
+    const epn=ep-eps*eq;
+    eq=eqn;ep=epn;
+    eud.push({q:eq,p:ep,H:Math.min((eq*eq+ep*ep)/2,H0*14)});
+  }
+}
+
+const px=q=>CX+q*SC;
+const py=p=>CY-p*SC;
+
+function drawPhase(){
+  const ctx=document.getElementById('pscv').getContext('2d');
+  ctx.clearRect(0,0,CW,CH);ctx.fillStyle=BG;ctx.fillRect(0,0,CW,CH);
+
+  ctx.strokeStyle=DK?'rgba(255,255,255,0.12)':'rgba(0,0,0,0.12)';ctx.lineWidth=0.5;
+  ctx.beginPath();ctx.moveTo(14,CY);ctx.lineTo(CW-10,CY);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(CX,10);ctx.lineTo(CX,CH-12);ctx.stroke();
+  ctx.fillStyle=DK?'rgba(255,255,255,0.3)':'rgba(0,0,0,0.3)';ctx.font='9px sans-serif';
+  ctx.textAlign='center';ctx.fillText('q',CW-12,CY+12);ctx.textAlign='right';ctx.fillText('p',CX-4,16);
+
+  ctx.beginPath();ctx.arc(CX,CY,Math.sqrt(2*H0)*SC,0,2*Math.PI);
+  ctx.strokeStyle=DK?'rgba(255,255,255,0.18)':'rgba(0,0,0,0.13)';
+  ctx.lineWidth=1;ctx.setLineDash([5,4]);ctx.stroke();ctx.setLineDash([]);
+
+  const ne=Math.min(cur+1,eud.length);
+  ctx.beginPath();let seE=false;
+  for(let i=0;i<ne;i++){
+    const{q,p}=eud[i];
+    if(Math.abs(q)>3.2||Math.abs(p)>3.2)break;
+    if(!seE){ctx.moveTo(px(q),py(p));seE=true;}else ctx.lineTo(px(q),py(p));
+  }
+  ctx.strokeStyle='rgba(226,75,74,0.6)';ctx.lineWidth=1.5;ctx.stroke();
+  for(let i=0;i<ne;i++){
+    const{q,p}=eud[i];
+    if(Math.abs(q)>3.2||Math.abs(p)>3.2)break;
+    ctx.beginPath();ctx.arc(px(q),py(p),i===cur?4:2,0,2*Math.PI);
+    ctx.fillStyle=i===cur?'#E24B4A':'rgba(226,75,74,0.4)';ctx.fill();
+  }
+
+  const nl=Math.min(cur+1,lfd.length);
+  ctx.beginPath();let seL=false;
+  for(let i=0;i<nl;i++){
+    const{q,p}=lfd[i];
+    if(!seL){ctx.moveTo(px(q),py(p));seL=true;}else ctx.lineTo(px(q),py(p));
+  }
+  ctx.strokeStyle='rgba(55,138,221,0.65)';ctx.lineWidth=1.5;ctx.stroke();
+  for(let i=0;i<nl;i++){
+    const{q,p}=lfd[i];
+    ctx.beginPath();ctx.arc(px(q),py(p),i===cur?5:2,0,2*Math.PI);
+    ctx.fillStyle=i===cur?'#378ADD':'rgba(55,138,221,0.4)';ctx.fill();
+  }
+  if(cur<lfd.length){
+    const{q,p}=lfd[cur];
+    ctx.beginPath();ctx.arc(px(q),py(p),6,0,2*Math.PI);
+    ctx.fillStyle='#378ADD';ctx.fill();ctx.strokeStyle='white';ctx.lineWidth=1.5;ctx.stroke();
+  }
+}
+
+let ec=null;
+function initChart(){
+  if(ec)ec.destroy();
+  ec=new Chart(document.getElementById('ecv'),{
+    type:'line',
+    data:{datasets:[
+      {label:'Leapfrog',data:[],borderColor:'#378ADD',borderWidth:2,pointRadius:0,tension:0,fill:false},
+      {label:'Euler',data:[],borderColor:'#E24B4A',borderWidth:2,pointRadius:0,tension:0,fill:false}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{type:'linear',min:0,max:MAXS,
+          title:{display:true,text:'스텝',font:{size:9},color:'#888'},
+          ticks:{color:'#888',font:{size:9},maxTicksLimit:6},
+          grid:{color:DK?'rgba(255,255,255,0.04)':'rgba(0,0,0,0.04)'}},
+        y:{ticks:{color:'#888',font:{size:9},callback:v=>v.toFixed(2)},
+          grid:{color:DK?'rgba(255,255,255,0.04)':'rgba(0,0,0,0.04)'}}
+      }
+    }
+  });
+}
+
+function updateChart(){
+  if(!ec)return;
+  ec.data.datasets[0].data=lfd.slice(0,cur+1).map((d,i)=>({x:i,y:+d.H.toFixed(5)}));
+  ec.data.datasets[1].data=eud.slice(0,cur+1).map((d,i)=>({x:i,y:+d.H.toFixed(5)}));
+  ec.update('none');
+}
+
+function renderDance(){
+  const el=document.getElementById('dance');
+  if(cur===0){
+    el.innerHTML=`<div style="font-size:12px;color:var(--color-text-secondary);padding:8px 12px;background:var(--color-background-secondary);border-radius:8px">'+1 스텝'을 클릭하면 세 단계 계산이 표시됩니다.</div>`;
+    return;
+  }
+  const{qo,po,ph,q:qn,p:pn}=lfd[cur];
+  function box(n,title,col,lines){
+    const ab=col==='a';
+    const bg=ab?(DK?'rgba(186,117,23,0.18)':'rgba(250,238,218,0.9)'):(DK?'rgba(55,138,221,0.18)':'rgba(230,241,251,0.9)');
+    const bc=ab?(DK?'rgba(186,117,23,0.45)':'rgba(186,117,23,0.4)'):(DK?'rgba(55,138,221,0.45)':'rgba(55,138,221,0.4)');
+    const tc=ab?(DK?'#EF9F27':'#633806'):(DK?'#85B7EB':'#0C447C');
+    return`<div style="background:${bg};border:0.5px solid ${bc};border-radius:8px;padding:9px 10px">
+      <div style="font-size:10px;font-weight:500;color:${tc};margin-bottom:5px">${n} ${title}</div>
+      ${lines.map(l=>`<div style="font-size:10px;color:var(--color-text-secondary);font-family:var(--font-mono);line-height:1.6">${l}</div>`).join('')}
+    </div>`;
+  }
+  const Hb=(qo*qo+po*po)/2,Ha=(qn*qn+pn*pn)/2;
+  el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+    ${box('①','p 절반 업데이트','a',[
+      `p½ = p − (ε/2)·∇V(q)`,
+      `   = ${po.toFixed(3)} − ${(eps/2).toFixed(3)}·${qo.toFixed(3)}`,
+      `   = <b>${ph.toFixed(4)}</b>`
+    ])}
+    ${box('②','q 전체 업데이트','b',[
+      `q' = q + ε·p½`,
+      `   = ${qo.toFixed(3)} + ${eps.toFixed(3)}·${ph.toFixed(3)}`,
+      `   = <b>${qn.toFixed(4)}</b>`
+    ])}
+    ${box('③','p 절반 업데이트','a',[
+      `p' = p½ − (ε/2)·∇V(q')`,
+      `   = ${ph.toFixed(3)} − ${(eps/2).toFixed(3)}·${qn.toFixed(3)}`,
+      `   = <b>${pn.toFixed(4)}</b>`
+    ])}
+  </div>
+  <div style="font-size:10px;color:var(--color-text-secondary);margin-top:6px;padding:5px 9px;background:var(--color-background-secondary);border-radius:6px">
+    에너지: H_before=${Hb.toFixed(5)} → H_after=${Ha.toFixed(5)} &nbsp;|&nbsp; 오차=${Math.abs(Ha-Hb).toFixed(7)} &nbsp;(O(ε²)=O(${(eps*eps).toFixed(3)}))
+  </div>`;
+}
+
+function updateInfo(){
+  const lH=lfd[cur].H,eH=eud[cur]?eud[cur].H:null;
+  document.getElementById('sinfo').innerHTML=
+    `스텝 <b>${cur}</b> &nbsp;|&nbsp;`+
+    `<span style="color:${DK?'#85B7EB':'#185FA5'}"> LF: H=${lH.toFixed(4)}</span>&nbsp;&nbsp;`+
+    `<span style="color:#E24B4A">Euler: H=${eH?eH.toFixed(4):'—'}</span>`;
+}
+
+function render(){drawPhase();updateChart();renderDance();updateInfo();}
+function stepOne(){if(cur>=MAXS)return;cur++;render();}
+function toggleRun(){
+  running=!running;
+  document.getElementById('rbtn').textContent=running?'\u23F8 일시정지':'\u25B6 재생';
+  if(running)iv=setInterval(()=>{
+    if(cur>=MAXS){running=false;clearInterval(iv);document.getElementById('rbtn').textContent='\u25B6 재생';return;}
+    cur++;render();
+  },280);
+  else clearInterval(iv);
+}
+function doReset(){
+  running=false;clearInterval(iv);
+  document.getElementById('rbtn').textContent='\u25B6 재생';
+  cur=0;precompute();initChart();render();
+}
+function setEps(e){
+  eps=e;document.getElementById('eplbl').textContent='ε='+e.toFixed(2);doReset();
+}
+precompute();initChart();render();
+</script>
